@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+</head>
+<body style="overflow: hidden; width: 100%; height:100%;">
+<svg id='svgDesenho' style="width: 100%; height: 100%;">
+	<rect id='gamePortrait' style="fill: #fff; stroke-width: 4; stroke: rgb(0,0,0)"></rect>
+	<g id="snakeG">
+	</g>
+	Sem suporte a SVG
+</svg>
+<script>
+var idCount = 0;
+
+var game = {
+	pause: false,
+	debug: false,
+	modifyingSnake: false,
+	interval: 40,
+	velocity: 10,
+	previousDirection: 'RIGHT',
+	direction: 'RIGHT',
+	snakeG: $("#snakeG"),
+	food: undefined,
+	body: []
+}
+
+var snakeSVG = [];
+var snakeHead;
+
+var svgDesenho = document.getElementById("svgDesenho");
+
+function update(){
+	if( game.pause == true ){
+		setTimeout( "update()", game.interval );
+		return;
+	}
+	if( !game.modifyingSnake ){
+		if( game.direction != game.previousDirection && game.direction != oppositeDirection( game.previousDirection ) ){
+			var boundingBox = snakeHead.element[0].getBBox();
+			switch(game.direction){
+				case 'LEFT': 
+					snakeHead.rotate = "rotate( 180, "+(boundingBox.x + 10)+", "+(boundingBox.y + 10)+" )";
+					break;
+				case 'UP':
+					snakeHead.rotate = "rotate( -90, "+(boundingBox.x + 10)+", "+(boundingBox.y + 10)+" )";
+				break;
+				case 'RIGHT':
+					snakeHead.rotate = "rotate( 0, "+(boundingBox.x  + 10)+", "+(boundingBox.y + 10)+" )";
+				break;
+				case 'DOWN': 
+					snakeHead.rotate = "rotate( 90, "+(boundingBox.x + 10)+", "+(boundingBox.y + 10)+" )";
+				break;
+			}
+			snakeHead.direction = game.direction;
+			
+			snakeHead.applyTransform();
+			
+			var obj;
+			for( var i = 1; obj = snakeSVG[i]; i++ ){
+				obj.nextCommands.push( { position : { x: snakeHead.currentPosition.x, y: snakeHead.currentPosition.y }, newDirection: game.direction} );
+			}
+		}
+		
+		var obj;
+		for( var i = 0; obj = snakeSVG[i]; i++ ){
+			if( obj.nextCommands.length > 0 ){
+				var objBB = obj.currentPosition;
+				var nextPositionBB = obj.nextCommands[0].position;
+				
+				if( arePointsClose( objBB.x, nextPositionBB.x )
+				 && arePointsClose( objBB.y, nextPositionBB.y) ){
+					obj.direction = obj.nextCommands[0].newDirection;
+					obj.nextCommands.shift();
+				}
+			}
+
+			switch(obj.direction){
+				case 'LEFT': 
+					obj.translateX -= game.velocity;
+					obj.currentPosition.x -= game.velocity;
+				break;
+				case 'UP':
+					obj.translateY -= game.velocity;
+					obj.currentPosition.y -= game.velocity;
+				break;
+				case 'RIGHT':
+					obj.translateX += game.velocity;
+					obj.currentPosition.x += game.velocity;
+				break;
+				case 'DOWN': 
+					obj.translateY += game.velocity;
+					obj.currentPosition.y += game.velocity;
+				break;
+			}
+			
+			obj.applyTransform();
+		}
+		
+		if( snakeTouchingFood() ){
+			removeFood();
+			increaseSize();
+			spawnRandomFood();
+		}
+		
+		if( snakeTouchingYourSelf() ){
+			if( game.debug == false) {
+				alert(" GAME OVER\nPress OK To restart ");
+				location.reload();
+			}else{
+				game.pause = true;	
+			}
+		}
+		
+		game.previousDirection = game.direction;
+	}
+	
+	setTimeout( "update()", game.interval );
+}
+
+function arePointsClose( point1, point2 ){
+	var result = Math.abs( point1 - point2 );
+	
+	return result <= 1;
+}
+
+function oppositeDirection(){
+	switch(game.direction){
+		case 'LEFT': 
+			return 'RIGHT';
+		break;
+		case 'UP':
+			return 'DOWN';
+		break;
+		case 'RIGHT':
+			return 'LEFT';
+		break;
+		case 'DOWN': 
+			return 'UP';
+		break;
+	}
+}
+
+function increaseSize(){
+	var last = snakeSVG[ snakeSVG.length - 1];
+	
+	var cloneObj = {};
+	var initialX = parseInt( last.element.attr("x"), 10 );
+	var initialY = parseInt( last.element.attr("y"), 10 );
+	
+	var currentX = parseInt( last.currentPosition.x, 10 );
+	var currentY = parseInt( last.currentPosition.y, 10 );
+	
+	switch(last.direction){
+		case 'LEFT': 
+			initialX += 20;
+			currentX += 20;
+		break;
+		case 'UP':
+			initialY -= 20;
+			currentY -= 20;
+		break;
+		case 'RIGHT':
+			initialX -= 20;
+			currentX -= 20;
+		break;
+		case 'DOWN': 
+			initialY += 20;
+			currentY += 20;
+		break;
+	}
+
+	cloneObj.element =  createSnakeBody( {x: initialX, y: initialY, width: 20, height: 20, id: ++idCount} );
+	cloneObj.currentPosition = { x: currentX, y: currentY };
+	cloneObj.translateX = last.translateX;
+	cloneObj.translateY = last.translateY;
+	cloneObj.rotate = last.rotate;
+
+	cloneObj.nextCommands = last.nextCommands.slice();
+	cloneObj.direction = last.direction;
+	
+	cloneObj.applyTransform = function(){
+		this.element.attr("transform", "translate(" + this.translateX + ", " + this.translateY + ") "+this.rotate);
+	};
+
+	cloneObj.applyTransform();
+
+	$(svgDesenho).append( cloneObj.element );
+	snakeSVG.push( cloneObj );
+}
+
+$(document).bind('keydown', function(e){
+	if( !game.modifyingSnake ){
+		game.modifyingSnake = true;
+		switch(e.which){
+			case 16: //left
+				rotatePiece();
+			break;
+			case 37: //left
+				game.direction = 'LEFT';
+			break;
+			case 38: //up
+				game.direction = 'UP';
+			break;
+			case 39: //right
+				game.direction = 'RIGHT';
+			break;
+			case 40: //down
+				game.direction = 'DOWN';
+			break;
+			case 107: //plus
+				//increaseSize();
+			case 106: //*
+				toogleDebugMode();
+			break;
+			case 32: 
+				if( game.pause == false ){
+					game.pause = true;
+				}else{
+					game.pause = false;
+				}
+			break;
+		}
+		
+		game.modifyingSnake = false;
+	}
+});
+
+function toogleDebugMode(){
+	if( game.debug == true ){
+		game.debug = false;
+	}else{
+		game.debug = true;
+	}
+}
+
+function createSnakeHead(obj){
+	var head = $( document.createElementNS("http://www.w3.org/2000/svg", "polygon") );
+	
+	head.attr("id", "snake_"+obj.id);
+	head.attr("points", "110,10 110,30 130,20");
+	head.css("fill", "black");
+	head.css("stroke", "black");
+	head.css("stroke-width", "0");
+	
+	return head;
+}
+
+function createSnakeBody(obj){
+	var body = $( document.createElementNS("http://www.w3.org/2000/svg", "rect") );
+
+	body.attr( "id", "snake_"+obj.id );
+	body.attr( "x", obj.x );
+	body.attr( "y", obj.y );
+	body.attr( "width", obj.width );
+	body.attr( "height", obj.height );
+	
+	body.css("fill", "black");
+	body.css("stroke", "black");
+	body.css("stroke-width", "0");
+	
+	return body;
+}
+
+function fillSnakeSVG(){
+		
+	snakeSVG.push( 
+		{ 
+			element: createSnakeHead( {id: ++idCount} ),
+			currentPosition: { x: 110, y: 10 },
+			getCenter: function(){
+				var currentX = this.currentPosition.x;
+				var currentY = this.currentPosition.y;
+				
+				if( game.direction == "RIGHT" ){
+					currentX += 20;
+					currentY += 10;
+				}else if( game.direction == "LEFT" ){
+					currentY += 10;
+				}else if( game.direction == "DOWN" ){
+					currentX += 10;
+					currentY += 20;
+				}else if( game.direction == "UP" ){
+					currentX += 10;
+				}
+				
+				return { x: currentX, y: currentY };
+			}
+		}
+	);
+	
+	snakeSVG.push( 
+		{
+			element: createSnakeBody( {x: 90, y: 10, width: 20, height: 20, id: ++idCount} ),
+			currentPosition: { x: 90, y: 10 }
+		}
+	);
+	snakeSVG.push( 
+		{
+			element: createSnakeBody( {x: 70, y: 10, width: 20, height: 20, id: ++idCount} ),
+			currentPosition: { x: 70, y: 10 }
+		}
+	);
+	snakeSVG.push( 
+		{
+			element: createSnakeBody( {x: 50, y: 10, width: 20, height: 20, id: ++idCount} ),
+			currentPosition: { x: 50, y: 10 }
+		}
+	);
+	snakeSVG.push( 
+		{	
+			element: createSnakeBody( {x: 30, y: 10, width: 20, height: 20, id: ++idCount} ),
+			currentPosition: { x: 30, y: 10 }
+		}		
+	);
+
+	for( var i = 0; i < snakeSVG.length; i++ ){
+		snakeSVG[i].translateX = 0;
+		snakeSVG[i].translateY = 0;
+		snakeSVG[i].rotate = "";
+		snakeSVG[i].nextCommands = [];
+		snakeSVG[i].direction = game.direction;
+		snakeSVG[i].applyTransform = function(){
+			this.element.attr("transform", "translate(" + this.translateX + ", " + this.translateY + ") "+this.rotate);
+		};
+	
+		$(svgDesenho).append( snakeSVG[i].element );
+	}
+	
+	snakeHead = snakeSVG[0];
+}
+
+function ajdustGamePortrait(){
+	$(document.body).height( $(document).height() - 32 );
+
+	$("#gamePortrait").attr("width", $(document).width() - 32 );
+	$("#gamePortrait").attr("height", $(document).height() - 42 );
+}
+
+function snakeTouchingYourSelf(){
+	var position = snakeHead.getCenter();
+	var value = false;
+
+	var currentX = position.x;
+	var currentY = position.y;
+
+	for( var i = 1; obj = snakeSVG[i]; i++ ){
+		var circleX = parseInt( obj.currentPosition.x, 10) + 10;
+		var circleY = parseInt( obj.currentPosition.y, 10) + 10;
+		var squareSize = 10;	
+		
+		var dx = currentX - circleX;
+		var dy = currentY - circleY;
+		
+		if( game.debug ){
+			log( "Dx: " + dx + " Dy: " + dy + " circleRadius: " + squareSize + " dx * dx + dy * dy " + (dx * dx + dy * dy) + " squareSize * squareSize " + (squareSize * squareSize ) );
+			drawDebugPoint(currentX, currentY, 1, "yellow");
+			drawDebugPoint(circleX, circleY, 3, "blue");
+		}
+		if( dx * dx + dy * dy <= squareSize * squareSize ){
+			return true;
+		}
+	}
+	
+	var portraitBounds = $("#svgDesenho").position();
+	
+	if( currentX >= portraitBounds.left + parseInt( $("#gamePortrait").attr("width"), 10) - 10 ){
+		log("Out of Bounds 1 ");
+		return true;
+	}
+	
+	if( currentY >= portraitBounds.top + parseInt( $("#gamePortrait").attr("height"), 10) - 10 ){
+		log("Out of Bounds 2 ");
+		return true;
+	}
+	
+	if( currentX <= portraitBounds.left ){
+		log("Out of Bounds 3 ");
+		return true;
+	}
+	
+	if( currentY <= portraitBounds.top ){
+		log("Out of Bounds 4 ");
+		return true;
+	}
+	
+	return value;
+}
+
+
+function snakeTouchingFood(){
+	var position = snakeHead.getCenter();
+	var value = false;
+
+	var currentX = position.x;
+	var currentY = position.y;
+
+	var circleX = parseInt( game.food.attr("cx"), 10);
+	var circleY = parseInt( game.food.attr("cy"), 10);
+	var circleRadius = parseInt( game.food.attr("r"), 10);
+	
+	var dx = currentX - circleX;
+    var dy = currentY - circleY;
+	
+	log( "Dx: " + dx + " Dy: " + dy + " circleRadius: " + circleRadius + " dx * dx + dy * dy " + (dx * dx + dy * dy) + " circleRadius * circleRadius " + (circleRadius * circleRadius ) );
+	
+	if( game.debug ){
+		drawDebugPoint(currentX, currentY, 2, "red");
+	}	
+    value = dx * dx + dy * dy <= circleRadius * circleRadius;
+	
+	return value;
+}
+
+function removeFood(){
+	game.food.remove();
+}
+
+function spawnRandomFood(){
+	var x = getRandomInt( 40, $("#gamePortrait").attr("width") - 40 );
+	var y = getRandomInt( 40, $("#gamePortrait").attr("height") - 40 );
+
+	var food = $( document.createElementNS("http://www.w3.org/2000/svg", "circle") );
+	
+	food.attr("cx", x);
+	food.attr("cy", y);
+	
+	food.attr("r", "10");
+	food.attr("fill", "black");
+	
+	game.food = food;
+	
+	$(svgDesenho).append( food );
+}
+
+function getRandomInt (min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function drawDebugPoint(x, y, r, color){
+	var point = $( document.createElementNS("http://www.w3.org/2000/svg", "circle") );
+	
+	point.attr("cx", x);
+	point.attr("cy", y);
+	
+	point.attr("r", r);
+	point.attr("fill", color);
+	
+	$(svgDesenho).append( point );
+}
+
+function log(msg){
+	if( game.debug )
+		console.log( msg );
+}
+
+ajdustGamePortrait();
+
+fillSnakeSVG();
+
+spawnRandomFood();
+
+update();
+
+</script>
+
+</body>
+</html>
